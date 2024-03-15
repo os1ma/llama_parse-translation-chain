@@ -1,6 +1,7 @@
 import logging
 import os
 import sys
+from collections.abc import Generator
 
 from dotenv import load_dotenv
 from langchain_core.messages import AIMessage, HumanMessage
@@ -37,6 +38,20 @@ def parse_pdf(pdf_file: str) -> str:
     return "\n".join(texts)
 
 
+def split_markdown(text: str) -> list[str]:
+    headers_to_split_on = [
+        ("#", "Header 1"),
+        ("##", "Header 2"),
+        ("###", "Header 3"),
+    ]
+    text_splitter = MarkdownHeaderTextSplitter(
+        headers_to_split_on=headers_to_split_on,
+        strip_headers=False,
+    )
+    split_docs = text_splitter.split_text(text)
+    return [doc.page_content for doc in split_docs]
+
+
 def translate_doc(prev_text: str | None, prev_output: str | None, text: str) -> str:
     llm = ChatOpenAI(
         model=os.environ["OPENAI_API_MODEL"],
@@ -66,17 +81,14 @@ def translate_doc(prev_text: str | None, prev_output: str | None, text: str) -> 
     return chain.invoke({"prev": prev, "text": text})
 
 
-def translate(texts: list[str]) -> list[str]:
+def translate(texts: list[str]) -> Generator[str, None, None]:
     prev: str | None = None
     prev_output: str | None = None
 
-    outputs = []
     for text in texts:
         prev_output = translate_doc(prev, prev_output, text)
         prev = text
-        outputs.append(prev_output)
-
-    return outputs
+        yield prev_output
 
 
 def main():
@@ -97,25 +109,11 @@ def main():
         with open(parsed_file, "w") as f:
             f.write(text)
 
-    headers_to_split_on = [
-        ("#", "Header 1"),
-        ("##", "Header 2"),
-        ("###", "Header 3"),
-    ]
-    text_splitter = MarkdownHeaderTextSplitter(
-        headers_to_split_on=headers_to_split_on,
-        strip_headers=False,
-    )
-    split_docs = text_splitter.split_text(text)
-    split_texts = [doc.page_content for doc in split_docs]
+    split_texts = split_markdown(text)
 
-    logger.info("Translating texts...")
-    translated_texts = translate(split_texts)
-    logger.info("Translation completed.")
-
-    logger.info("Writing translated file: %s", translated_file)
     with open(translated_file, "w") as f:
-        f.write("\n".join(translated_texts))
+        for chunk in translate(split_texts):
+            f.write(f"{chunk}\n")
 
 
 main()
