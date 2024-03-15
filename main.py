@@ -4,7 +4,7 @@ import sys
 from collections.abc import Generator
 
 from dotenv import load_dotenv
-from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_openai import ChatOpenAI
@@ -52,7 +52,7 @@ def split_markdown(text: str) -> list[str]:
     return [doc.page_content for doc in split_docs]
 
 
-def translate_doc(prev_text: str | None, prev_output: str | None, text: str) -> str:
+def translate_doc(few_shot: list[BaseMessage] | None, text: str) -> str:
     llm = ChatOpenAI(
         model=os.environ["OPENAI_API_MODEL"],
         temperature=float(os.environ["OPENAI_API_TEMPERATURE"]),
@@ -60,34 +60,32 @@ def translate_doc(prev_text: str | None, prev_output: str | None, text: str) -> 
 
     prompt = ChatPromptTemplate.from_messages(
         [
-            ("system", "Translate English to Japanese."),
-            MessagesPlaceholder(variable_name="prev", optional=True),
+            ("system", "Translate English to Japanese. Don't generate new content."),
+            MessagesPlaceholder(variable_name="few_shot", optional=True),
             ("user", "{text}"),
         ]
     )
 
     chain = prompt | llm | StrOutputParser()
 
-    if prev_text is None and prev_output is None:
-        prev = []
-    elif prev_text is not None and prev_output is not None:
-        prev = [
-            HumanMessage(content=prev_text),
-            AIMessage(content=prev_output),
-        ]
-    else:
-        raise ValueError("Invalid prev_text and prev_output")
+    return chain.invoke({"few_shot": few_shot, "text": text})
 
-    return chain.invoke({"prev": prev, "text": text})
+
+MAX_FEW_SHOT = 3
 
 
 def translate(texts: list[str]) -> Generator[str, None, None]:
-    prev: str | None = None
-    prev_output: str | None = None
+    few_shot: list[BaseMessage] = []
 
     for text in texts:
-        prev_output = translate_doc(prev, prev_output, text)
-        prev = text
+        prev_output = translate_doc(few_shot, text)
+
+        few_shot.append(HumanMessage(content=text))
+        few_shot.append(AIMessage(content=prev_output))
+
+        if len(few_shot) > MAX_FEW_SHOT * 2:
+            few_shot = few_shot[2:]
+
         yield prev_output
 
 
