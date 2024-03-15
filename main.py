@@ -95,8 +95,8 @@ def main():
         sys.exit(1)
 
     pdf_file = sys.argv[1]
-    parsed_file = f"{PERSIST_DIR}/{pdf_file}.txt"
-    translated_file = f"{PERSIST_DIR}/{pdf_file}.ja.txt"
+    parsed_file = f"{PERSIST_DIR}/{pdf_file}.md"
+    translated_file = f"{PERSIST_DIR}/{pdf_file}.ja.md"
 
     exist_parsed_file = os.path.exists(parsed_file)
     if exist_parsed_file:
